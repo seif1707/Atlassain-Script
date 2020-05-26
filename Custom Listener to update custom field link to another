@@ -1,0 +1,72 @@
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.issue.IssueManager
+import com.atlassian.jira.user.ApplicationUser
+import com.atlassian.jira.user.util.UserManager
+import com.atlassian.jira.issue.Issue
+import com.atlassian.jira.issue.IssueManager
+import com.atlassian.jira.issue.CustomFieldManager
+import com.atlassian.jira.issue.fields.CustomField
+import com.atlassian.jira.event.issue.AbstractIssueEventListener
+import com.atlassian.jira.event.issue.IssueEvent
+import com.atlassian.jira.issue.changehistory.ChangeHistoryManager
+import com.atlassian.jira.issue.changehistory.ChangeHistoryItem
+import com.atlassian.jira.util.ErrorCollection
+import com.atlassian.jira.bc.issue.IssueService
+import com.atlassian.jira.issue.IssueInputParameters
+import com.atlassian.jira.bc.issue.IssueService.IssueResult
+import com.atlassian.jira.issue.IssueManager
+import com.atlassian.jira.issue.link.IssueLink;
+import org.apache.log4j.Category
+import com.atlassian.jira.issue.fields.CustomField
+import com.atlassian.jira.issue.ModifiedValue
+import com.atlassian.jira.issue.util.DefaultIssueChangeHolder
+
+String tipolink = "Audit Link"; //Name of the type of link
+
+def issueManager = ComponentAccessor.getIssueManager()
+def issueLinkManager = ComponentAccessor.getIssueLinkManager()
+def customFieldManager = ComponentAccessor.getCustomFieldManager();
+// get event issue "task"
+def issueEvent = event.getIssue()
+def issueID = issueEvent.getId()
+log.warn(issueEvent)
+if (issue.issueType.name == 'Task'){
+    
+// get event issuetype main link 
+List<IssueLink> allInIssueLink = issueLinkManager.getInwardLinks(issueID); 
+// issue type of audit 
+def issueLinkedToAudit
+for (Iterator<IssueLink> inIterator = allInIssueLink.iterator(); inIterator.hasNext();) {
+IssueLink issueLink = (IssueLink) inIterator.next();
+def linkedIssue = issueLink.getSourceObject();
+    issueLinkedToAudit = linkedIssue.getKey()
+log.warn("LinkTypeId:" + issueLink.getIssueLinkType().getName() + " linked: ${linkedIssue.getId()}, ${linkedIssue.getKey()}. DETECTED:" + linkedIssue.getStatusObject().getName());
+if (issueLink.getIssueLinkType().getName().equals(tipolink) ) {
+log.warn( "linked Content: ${linkedIssue.getId()}, ${linkedIssue.getKey()}.")
+
+}
+}
+
+def fieldsModified = event?.getChangeLog()?.getRelated("ChildChangeItem").field;
+log.warn(fieldsModified)
+//loop through the event custom field
+fieldsModified.each{customField ->
+def cField = customFieldManager.getCustomFieldObjectByName(customField.toString())
+    def CFvalue =  issueEvent.getCustomFieldValue(cField)
+    log.warn("custom fields values :" + CFvalue)
+    if (CFvalue != null){
+        def issue = issueManager.getIssueObject(issueLinkedToAudit.toString())
+        try{
+        cField.updateValue(null, issue, new ModifiedValue(CFvalue, CFvalue), new DefaultIssueChangeHolder())
+    }
+    catch(Exception ex){
+        log.info("error occured")
+	}
+    }
+}
+}else{
+    log.warn("It's not a Task")
+}
+
+
+
