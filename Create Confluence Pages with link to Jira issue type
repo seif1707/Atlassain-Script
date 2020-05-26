@@ -1,0 +1,101 @@
+import com.atlassian.applinks.api.ApplicationLink
+import com.atlassian.applinks.api.ApplicationLinkService
+import com.atlassian.applinks.api.application.confluence.ConfluenceApplicationType
+import com.atlassian.jira.issue.Issue
+import com.atlassian.sal.api.component.ComponentLocator
+import com.atlassian.sal.api.net.Request
+import com.atlassian.sal.api.net.Response
+import com.atlassian.sal.api.net.ResponseException
+import com.atlassian.sal.api.net.ResponseHandler
+import groovy.json.JsonBuilder
+import groovy.json.JsonSlurper
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.issue.Issue
+import groovy.xml.MarkupBuilder
+import com.atlassian.jira.bc.issue.issuelink.RemoteIssueLinkService
+import com.atlassian.jira.bc.issue.link.RemoteIssueLinkService
+import com.atlassian.jira.issue.link.RemoteIssueLinkBuilder
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.issue.fields.CustomField
+import com.atlassian.jira.issue.ModifiedValue
+import com.atlassian.jira.issue.util.DefaultIssueChangeHolder
+
+def issueManager = ComponentAccessor.getIssueManager()
+//def issue = issueManager.getIssueObject("AM-184")
+def customFieldManager = ComponentAccessor.getCustomFieldManager()
+
+//Declaration for CF childID page
+def childId = customFieldManager.getCustomFieldObject("customfield_11203") 
+def childIdValue = issue.getCustomFieldValue(childId)
+log.warn(childIdValue)
+
+def ApplicationLink getPrimaryConfluenceLink() {
+    def applicationLinkService = ComponentLocator.getComponent(ApplicationLinkService.class)
+    final ApplicationLink conflLink = applicationLinkService.getPrimaryApplicationLink(ConfluenceApplicationType.class)
+    conflLink
+}
+def confluenceLink = getPrimaryConfluenceLink()
+assert confluenceLink // must have a working app link set up
+def authenticatedRequestFactory = confluenceLink.createAuthenticatedRequestFactory()
+
+// Create Rest Function to be called
+def createPagesRest (params,authenticatedRequestFactory){
+    authenticatedRequestFactory
+    .createRequest(Request.MethodType.POST, "rest/api/content")
+    .addHeader("Content-Type", "application/json")
+    .setRequestBody(new JsonBuilder(params).toString())
+    .execute(new ResponseHandler<Response>() {
+        @Override
+        void handle(Response response) throws ResponseException {
+                try{
+                    if (response.statusCode != HttpURLConnection.HTTP_OK) {
+                        throw new Exception(response.getResponseBodyAsString())
+                    }
+                }catch(Exception e){
+                    log.warn( "REST sucessful")
+                    log.warn(e)
+                }
+        }
+    })
+} 
+//For Macro Jira issue/filter and server ID 
+def writer = new StringWriter()
+def xml = new MarkupBuilder(writer)
+xml.'ac:structured-macro'('ac:name': "jira") {
+    'ac:parameter'('ac:name': "key", issue.key)
+    'ac:parameter'('ac:name': "server", "NWC - Jira")
+    'ac:parameter'('ac:name': "serverId", "BS3Z-RMMW-7KQ2-LCU7")
+}
+
+def tabTitle=["Task 1"] 
+def comp1 = "Receive Audit Requests"
+def comp2 = "Announce Audit requests to concerned IT stakeholders"
+if (issue.summary.equals(comp1.toString())){
+  //log.warn("test test")
+
+tabTitle.each{ audit ->
+    // issue key with new child child title
+def pageTitle = issue.key+"-"+issue.summary +"-"+ audit
+
+log.warn(childIdValue.toString())
+def paramsMainPage = [
+    type : "page",
+    title: pageTitle,
+    space: [
+        key: "AS"
+    ],
+    //fixd with double array
+    ancestors:[
+       [id:childIdValue.toString()] 
+    ],
+    body : [
+        storage: [
+           value         : writer.toString(),
+            representation: "storage"
+        ],
+    ],
+]
+//get new created main home page
+createPagesRest(paramsMainPage,authenticatedRequestFactory)    
+} // end of loop for Create child Page 
+}
